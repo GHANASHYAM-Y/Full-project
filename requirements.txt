@@ -1,0 +1,10 @@
+flask
+pyotp
+qrcode[pil]
+pillow
+numpy
+opencv-python
+dlib
+face-recognition
+pandas
+matplotlib

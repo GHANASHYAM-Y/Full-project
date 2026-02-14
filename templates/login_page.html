@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Attendance System</title>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .form-group { margin-bottom: 20px; }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.error {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+            display: block;
+        }
+
+        .message.success {
+            background: #efe;
+            color: #3c3;
+            border: 1px solid #cfc;
+            display: block;
+        }
+
+        .link {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
+
+        .link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <h1>🔐 Login</h1>
+
+    <div id="message" class="message"></div>
+
+    <!-- IMPORTANT: novalidate avoids browser auto-submit quirks -->
+    <form id="loginForm" novalidate>
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="username" autocomplete="off" required>
+        </div>
+
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="password" autocomplete="off" required>
+        </div>
+
+        <!-- type="button" avoids double submit -->
+        <button type="submit" class="btn">Login</button>
+    </form>
+
+    <div class="link">
+        Don’t have an account? <a href="/register">Register here</a>
+    </div>
+</div>
+
+<script>
+document.getElementById("loginForm").addEventListener("submit", async function (e) {
+    e.preventDefault(); // 🔒 absolutely critical
+
+    const messageDiv = document.getElementById("message");
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+
+    messageDiv.style.display = "none";
+
+    try {
+        const res = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            messageDiv.className = "message error";
+            messageDiv.textContent = "✗ " + (data.error || "Login failed");
+            messageDiv.style.display = "block";
+            return;
+        }
+
+        // ✅ SUCCESS → REDIRECT IMMEDIATELY
+        window.location.assign(data.redirect);
+
+    } catch (err) {
+        messageDiv.className = "message error";
+        messageDiv.textContent = "✗ Server error. Try again.";
+        messageDiv.style.display = "block";
+    }
+});
+</script>
+
+</body>
+</html>

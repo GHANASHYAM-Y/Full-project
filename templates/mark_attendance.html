@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Mark Attendance - Liveness Detection</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    .blink-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background-color: #dc3545;
+      margin-right: 8px;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    
+    .blink-indicator.verified {
+      background-color: #22c55e;
+      animation: none;
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.3;
+      }
+    }
+    
+    .security-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 20px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    
+    .instruction-card {
+      background: #f8f9fa;
+      border-left: 4px solid #667eea;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    
+    .video-container {
+      position: relative;
+      display: inline-block;
+    }
+    
+    .overlay-text {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      z-index: 10;
+      display: none;
+    }
+    
+    .overlay-text.show {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<div class="container my-4">
+  <div class="card p-4 shadow-sm">
+    <!-- Header with security badge -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h4 class="mb-2">Mark Attendance (Live)</h4>
+        <div class="security-badge">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span>Anti-Spoofing Protected</span>
+        </div>
+      </div>
+      <div>
+        <button id="startMarkBtn" class="btn btn-primary">Start Camera</button>
+        <button id="stopMarkBtn" class="btn btn-danger" disabled>Stop</button>
+      </div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="instruction-card">
+      <h6 class="mb-2">📋 How it works:</h6>
+      <ol class="mb-0 small">
+        <li><strong>Step 1:</strong> Click "Start Camera" and position your face in frame</li>
+        <li><strong>Step 2:</strong> Blink naturally when prompted (liveness check)</li>
+        <li><strong>Step 3:</strong> Once blink is detected, face recognition will start automatically</li>
+        <li><strong>Step 4:</strong> Attendance marked! ✓</li>
+      </ol>
+    </div>
+
+    <div class="row mt-3">
+      <!-- Video feed -->
+      <div class="col-md-7 text-center">
+        <div class="video-container">
+          <video id="markVideo" width="560" height="420" autoplay muted 
+                 style="border-radius:10px;border:2px solid #e2e8f0;background:#000;">
+          </video>
+          <div id="overlayText" class="overlay-text">👁️ Please blink</div>
+        </div>
+        
+        <!-- Status with blink indicator -->
+        <div class="mt-3 p-3 border rounded" style="background: #f8f9fa;">
+          <div class="d-flex align-items-center justify-content-center">
+            <span class="blink-indicator" id="blinkIndicator"></span>
+            <div id="markStatus" class="small text-muted">Waiting to start...</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Recognized students list -->
+      <div class="col-md-5">
+        <h6>✅ Recognized Students (Session)</h6>
+        <div class="alert alert-info small mb-3">
+          <strong>Note:</strong> All entries include liveness verification to prevent photo/video spoofing.
+        </div>
+        <ul id="recognizedList" class="list-group" style="max-height: 400px; overflow-y: auto;">
+          <!-- Dynamically populated -->
+        </ul>
+      </div>
+    </div>
+
+    <!-- Security info footer -->
+    <div class="mt-4 p-3 border-top">
+      <small class="text-muted">
+        <strong>🔒 Security Features:</strong> 
+        Blink detection (Eye Aspect Ratio) • 70% confidence threshold • 1-hour attendance cooldown • Session-based authentication
+      </small>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/camera_mark.js') }}"></script>
+
+<script>
+  // Add visual feedback for blink status
+  const blinkIndicator = document.getElementById('blinkIndicator');
+  const overlayText = document.getElementById('overlayText');
+  
+  // Monitor status changes to update indicator
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList' || mutation.type === 'characterData') {
+        const statusText = document.getElementById('markStatus').textContent;
+        
+        if (statusText.includes('Liveness confirmed')) {
+          blinkIndicator.classList.add('verified');
+          overlayText.textContent = '✓ Liveness Verified';
+          overlayText.classList.add('show');
+          overlayText.style.background = 'rgba(34, 197, 94, 0.9)';
+          
+          setTimeout(() => {
+            overlayText.classList.remove('show');
+          }, 2000);
+        } else if (statusText.includes('blink naturally')) {
+          blinkIndicator.classList.remove('verified');
+          overlayText.textContent = '👁️ Please blink';
+          overlayText.classList.add('show');
+          overlayText.style.background = 'rgba(0, 0, 0, 0.7)';
+        } else if (statusText.includes('face recognition')) {
+          overlayText.classList.remove('show');
+        }
+      }
+    });
+  });
+  
+  observer.observe(document.getElementById('markStatus'), {
+    childList: true,
+    characterData: true,
+    subtree: true
+  });
+</script>
+</body>
+</html>

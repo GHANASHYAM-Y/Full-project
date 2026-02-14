@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Verification</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .btn {
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .status.checking {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+            display: block;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .location-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .location-info.show {
+            display: block;
+        }
+
+        .location-info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📍</div>
+        <h1>Location Verification</h1>
+        <p>To mark attendance, we need to verify you're on campus. Please allow location access when prompted.</p>
+        
+        <button id="verifyBtn" class="btn" onclick="getLocation()">Verify My Location</button>
+        
+        <div id="status" class="status"></div>
+        
+        <div id="locationInfo" class="location-info">
+            <p><strong>Your Location:</strong></p>
+            <p>Latitude: <span id="lat">-</span></p>
+            <p>Longitude: <span id="lon">-</span></p>
+        </div>
+    </div>
+
+    <script>
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+        }
+
+        function getLocation() {
+            const btn = document.getElementById('verifyBtn');
+            btn.disabled = true;
+            
+            showStatus('🔍 Checking your location...', 'checking');
+
+            if (!navigator.geolocation) {
+                showStatus('❌ Geolocation is not supported by your browser', 'error');
+                btn.disabled = false;
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const latitude = position.coords.latitude;
+                    const longitude = position.coords.longitude;
+                    
+                    // Show location info
+                    document.getElementById('lat').textContent = latitude.toFixed(6);
+                    document.getElementById('lon').textContent = longitude.toFixed(6);
+                    document.getElementById('locationInfo').classList.add('show');
+                    
+                    // Verify location with server
+                    try {
+                        const response = await fetch('/verify_location', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ latitude, longitude })
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            showStatus('✓ Location verified! Redirecting...', 'success');
+                            setTimeout(() => {
+                                window.location.href = data.next_step;
+                            }, 1500);
+                        } else {
+                            showStatus('❌ ' + data.error, 'error');
+                            btn.disabled = false;
+                        }
+                    } catch (error) {
+                        showStatus('❌ Failed to verify location. Please try again.', 'error');
+                        btn.disabled = false;
+                    }
+                },
+                (error) => {
+                    let message = '❌ ';
+                    switch(error.code) {
+                        case error.PERMISSION_DENIED:
+                            message += 'Location access denied. Please enable location services.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            message += 'Location information unavailable.';
+                            break;
+                        case error.TIMEOUT:
+                            message += 'Location request timed out.';
+                            break;
+                        default:
+                            message += 'An unknown error occurred.';
+                    }
+                    showStatus(message, 'error');
+                    btn.disabled = false;
+                }
+            );
+        }
+    </script>
+</body>
+</html>
