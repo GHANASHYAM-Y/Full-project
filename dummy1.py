@@ -1,0 +1,1 @@
+DELETE FROM attendance WHERE student_id = 29 AND date > '2026-04-13';

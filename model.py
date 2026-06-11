@@ -27,7 +27,7 @@ def eye_aspect_ratio(eye):
     Returns:
         float: Eye Aspect Ratio value
     """
-    # Compute vertical distances using numpy
+    # Compute vertical distances using 
     A = np.linalg.norm(eye[1] - eye[5])
     B = np.linalg.norm(eye[2] - eye[4])
     
@@ -286,6 +286,9 @@ def load_model_if_exists():
 def predict_with_model(clf, emb):
     """Predict student ID and confidence from face embedding"""
     try:
+        import numpy as np
+        import face_recognition
+
         if clf is None or 'encodings' not in clf or 'labels' not in clf:
             print("[DEBUG] Invalid model structure")
             return None, 0.0
@@ -294,26 +297,35 @@ def predict_with_model(clf, emb):
             print("[DEBUG] No encodings in model")
             return None, 0.0
         
+        # 🔹 Calculate distances
         distances = face_recognition.face_distance(clf['encodings'], emb)
         best_match_idx = np.argmin(distances)
-        
-        print(f"[DEBUG] Best match distance: {distances[best_match_idx]:.4f}")
-        
-        if distances[best_match_idx] > 0.6:
-            print(f"[DEBUG] Face too different (distance > 0.6)")
-            return None, 0.0
-        
-        confidence = 1 - distances[best_match_idx]
+        best_distance = distances[best_match_idx]
+
+        print(f"[DEBUG] Best match distance: {best_distance:.4f}")
+
+        # 🔥 FIXED THRESHOLD LOGIC
+        THRESHOLD = 0.55
+
+        if best_distance > THRESHOLD:
+            print("[DEBUG] Face too different → Unknown")
+            confidence = 1 - best_distance
+            return None, float(confidence)
+
+        # 🔹 Valid match
         label = clf['labels'][best_match_idx]
-        
+        confidence = 1 - best_distance
+
         print(f"[DEBUG] Predicted label: {label}, confidence: {confidence:.2%}")
+
         return label, float(confidence)
     
     except Exception as e:
         print(f"[ERROR] predict_with_model failed: {e}")
+        import traceback
         traceback.print_exc()
         return None, 0.0
-
+    
 def train_model_background(dataset_dir, progress_callback=None, full_retrain=False):
     """
     Train face recognition model with AUTOMATIC IMAGE FORMAT CORRECTION.

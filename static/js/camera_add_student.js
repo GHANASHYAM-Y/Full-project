@@ -1,7 +1,7 @@
 // static/js/camera_add_student.js
 (() => {
   // Config
-  const MAX_IMAGES = 100;
+  const MAX_IMAGES = 50;
   const CAPTURE_INTERVAL_MS = 180; // ~5.5 fps -> ~18 seconds for 100 images
   const UPLOAD_BATCH_SIZE = 20;
   const CREATE_STUDENT_URL = '/add_student';
@@ -51,7 +51,7 @@
 
   async function startCamera() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
       videoEl.srcObject = stream;
       await videoEl.play();
       return true;

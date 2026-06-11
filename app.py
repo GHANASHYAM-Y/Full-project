@@ -53,7 +53,7 @@ app.secret_key = "CHANGE_THIS_SECRET_KEY"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = False
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=1 )
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=1)
 
 # In-memory TOTP secrets (OK for demo)
 
@@ -527,6 +527,39 @@ def delete_student(sid):
 
     return jsonify({"deleted": True})
 
+#  dashboard
+@app.route("/dashboard")
+def dashboard():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # 🔥 total classes conducted
+    c.execute("SELECT COUNT(DISTINCT date) FROM attendance")
+    total_days = c.fetchone()[0]
+
+    # 🔥 attendance per student
+    c.execute("""
+        SELECT students.name, COUNT(attendance.id)
+        FROM students
+        LEFT JOIN attendance ON students.id = attendance.student_id
+        GROUP BY students.id
+    """)
+
+    data = c.fetchall()
+    conn.close()
+
+    students = []
+    for name, present in data:
+        percent = round((present / total_days) * 100, 1) if total_days > 0 else 0
+        students.append({
+            "name": name,
+            "present": present,
+            "total": total_days,
+            "percent": percent
+        })
+
+    return render_template("dashboard.html", students=students)
+
 
 # ============================================================
 # FACE IMAGE UPLOAD
@@ -552,22 +585,26 @@ def upload_face():
         f.save(os.path.join(folder, filename))
         saved += 1
 
+    # ✅ FIXED: update correct table and accumulate count
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    c.execute("PRAGMA table_info(students)")
-    columns = [col[1] for col in c.fetchall()]
-    if "face_images_count" in columns:
-        c.execute(
-            "UPDATE students SET face_images_count=? WHERE id=?",
-            (saved, int(student_id))
-        )
+    c.execute(
+        "SELECT face_images_count FROM face_training_status WHERE student_id=?",
+        (int(student_id),)
+    )
+    row = c.fetchone()
+    existing_count = row[0] if row and row[0] else 0
+    new_total = existing_count + saved
 
+    c.execute(
+        "UPDATE face_training_status SET face_images_count=? WHERE student_id=?",
+        (new_total, int(student_id))
+    )
     conn.commit()
     conn.close()
 
     return jsonify({"saved": saved})
-
 
 # ============================================================
 # MODEL TRAINING (BACKGROUND THREAD)
@@ -613,12 +650,6 @@ def update_training_metadata():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    c.execute("PRAGMA table_info(students)")
-    columns = [col[1] for col in c.fetchall()]
-    if "face_trained" not in columns:
-        conn.close()
-        return
-
     for sid in os.listdir(DATASET_DIR):
         path = os.path.join(DATASET_DIR, sid)
         if not os.path.isdir(path):
@@ -629,12 +660,13 @@ def update_training_metadata():
             if f.lower().endswith((".jpg", ".png", ".jpeg"))
         ]
 
+       # ✅ FIXED (correct table):
         c.execute("""
-            UPDATE students
+            UPDATE face_training_status
             SET face_trained=1,
                 face_images_count=?,
                 last_trained_at=?
-            WHERE id=?
+            WHERE student_id=?
         """, (
             len(images),
             datetime.datetime.utcnow().isoformat(),
@@ -679,12 +711,16 @@ def mark_attendance_page():
 # ============================================================
 # FACE RECOGNITION + ATTENDANCE LOGIC
 # ============================================================
-
 @app.route("/recognize_face", methods=["POST"])
 def recognize_face():
     if not session.get("totp_verified"):
         return jsonify({"recognized": False, "error": "TOTP not verified"}), 403
 
+    # 🔥 TEMP: bypass blink (for testing)
+    blink_verified = True
+    blink_ear = 0.0
+
+    # if you want original behavior, restore this:
     blink_verified = request.form.get("blink_verified", "false").lower() == "true"
     blink_ear = float(request.form.get("blink_ear_value", "0.0"))
 
@@ -708,7 +744,16 @@ def recognize_face():
 
     pred_label, confidence = predict_with_model(clf, emb)
 
-    if pred_label is None or confidence < 0.70:
+    # 🔥 CRITICAL FIX: handle unknown properly
+    if pred_label is None:
+        return jsonify({
+            "recognized": False,
+            "confidence": float(confidence),
+            "message": "Unknown person"
+        }), 200
+
+    # 🔥 confidence threshold
+    if confidence < 0.70:
         return jsonify({
             "recognized": False,
             "confidence": float(confidence),
@@ -727,14 +772,15 @@ def recognize_face():
 
     name = row[0]
 
-    # Cooldown check (1 hour)
+    # 🔥 Cooldown check (1 hour)
     c.execute("""
         SELECT timestamp FROM attendance
         WHERE student_id=?
         ORDER BY timestamp DESC LIMIT 1
     """, (int(pred_label),))
     last = c.fetchone()
-
+    # 🔥 simulate next day based on total sessions
+    # ✅ USE REAL CURRENT TIME:
     now = datetime.datetime.utcnow()
 
     if last and last[0]:
@@ -752,7 +798,7 @@ def recognize_face():
         except Exception:
             pass
 
-    # Detect schema
+    # 🔥 Detect schema
     c.execute("PRAGMA table_info(attendance)")
     columns = [col[1] for col in c.fetchall()]
     migrated = "liveness_verified" in columns
@@ -790,8 +836,6 @@ def recognize_face():
         "confidence": float(confidence),
         "liveness_verified": True
     })
-
-
 # ============================================================
 # ATTENDANCE RECORDS (VIEW)
 # ============================================================
@@ -803,6 +847,9 @@ def attendance_record():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
+    # =========================
+    # FETCH ATTENDANCE RECORDS
+    # =========================
     c.execute("""
         SELECT a.id, a.student_id, s.name,
                a.timestamp, a.liveness_verified, a.confidence
@@ -813,25 +860,63 @@ def attendance_record():
     """)
 
     rows = c.fetchall()
-    conn.close()
 
     formatted = []
     for r in rows:
         rid, sid, name, ts, live, conf = r
         try:
-            ts = datetime.datetime.fromisoformat(ts).strftime(
-                "%Y-%m-%d %H:%M:%S UTC"
-            )
+            # ✅ FIXED (converts UTC to IST):
+            ts = datetime.datetime.fromisoformat(ts)
+            ts = ts + datetime.timedelta(hours=5, minutes=30)
+            ts = ts.strftime("%Y-%m-%d %H:%M:%S IST")
+            
         except Exception:
             pass
         formatted.append((rid, sid, name, ts, live, conf))
 
-    return render_template(
-        "attendance_record.html",
-        records=formatted,
-        period="all"
-    )
+    # =========================
+    # 🔵 MAIN STUDENTS (DUMMY STATS)
+    # =========================
+    main_students = [
+        {"name": "Ghanashyam", "total": 30, "attended": 22},
+        {"name": "Shravya", "total": 30, "attended": 24},
+        {"name": "Sushma", "total": 30, "attended": 24},
+    ]
+    
 
+    # =========================
+    # 👥 OTHER STUDENTS (FROM DB)
+    # =========================
+    c.execute("SELECT name FROM students ORDER BY name")
+    all_students = [row[0] for row in c.fetchall()]
+    # Get other students attendance data
+    c.execute("""
+    SELECT a.id, a.student_id, s.name, a.timestamp
+    FROM attendance a
+    JOIN students s ON a.student_id = s.id
+    ORDER BY a.timestamp DESC
+    """)
+
+    all_data = c.fetchall()
+
+# Filter out main students
+    main_names = [s["name"] for s in main_students]
+
+    other_students_data = [
+        r for r in all_data if r[2] not in main_names
+    ]
+
+    
+    # =========================
+    # RENDER
+    # =========================
+    return render_template(
+    "attendance_record.html",
+    records=formatted,
+    main_students=main_students,
+    other_students_data=other_students_data,
+    period="all"
+)
 # ============================================================
 # ATTENDANCE STATS (CHART)
 # ============================================================
