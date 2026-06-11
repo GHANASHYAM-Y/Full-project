@@ -1,8 +1,25 @@
+# Python
 __pycache__/
+*.pyc
+
+# Virtual environment
 venv/
+
+# Database
+*.db
+
+# Dataset and test images
+dataset/
+23_test/
+
+# Trained models
 *.pkl
-attendance.db
 train_status.json
 trained_students.json
-static/images/
 
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
